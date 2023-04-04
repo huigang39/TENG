@@ -13,11 +13,11 @@ def plot_signal_waveform(data, fs):
     # 绘制信号波形
     duration = len(data) / fs # 持续时间，单位为秒
     time = np.linspace(0, duration, len(data))
+    plt.subplot(3,1,1)
     plt.plot(time, data)
     plt.xlabel("Time (s)")
     plt.ylabel("Amplitude")
     plt.title("Original Signal")
-    plt.show()
 
 
 def plot_stft_spectrogram(data, fs, window, nperseg, noverlap):
@@ -25,11 +25,11 @@ def plot_stft_spectrogram(data, fs, window, nperseg, noverlap):
     f, t, Zxx = signal.stft(data, fs=fs, window=window, nperseg=nperseg, noverlap=noverlap)
 
     # 绘制时频图
+    plt.subplot(3,1,2)
     plt.pcolormesh(t, f, np.abs(Zxx), cmap='YlOrBr')
     plt.title('STFT Magnitude')
     plt.ylabel('Frequency [Hz]')
     plt.xlabel('Time [sec]')
-    plt.show()
 
 
 def plot_fft_magnitude(data, fs):
@@ -38,15 +38,15 @@ def plot_fft_magnitude(data, fs):
     freqs = np.fft.fftfreq(len(fft_data), 1/fs)
 
     # 绘制FFT图
+    plt.subplot(3,1,3)
     plt.plot(freqs, np.abs(fft_data))
     plt.title('FFT Magnitude')
     plt.ylabel('Magnitude')
     plt.xlabel('Frequency [Hz]')
-    plt.show()
 
 
 if __name__ == '__main__':
-    filename = 'signal_data.txt'
+    filename = 'Software\data\signal_data.txt'
     data = load_data(filename)
     fs = 1000
     window = signal.windows.hann(128) # 窗函数
@@ -56,3 +56,9 @@ if __name__ == '__main__':
     plot_signal_waveform(data, fs)
     plot_stft_spectrogram(data, fs, window, nperseg, noverlap)
     plot_fft_magnitude(data, fs)
+
+    # 调整布局
+    plt.tight_layout()
+
+    # 显示图形
+    plt.show()

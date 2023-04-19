@@ -46,7 +46,7 @@ def plot_fft_magnitude(data, fs):
 
 
 if __name__ == '__main__':
-    filename = 'Software\data\\1.csv'
+    filename = 'Software/data/1.csv'
     data = load_data(filename)
     fs = 1000
     window = signal.windows.hann(128) # 窗函数

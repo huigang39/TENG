@@ -1,86 +1,108 @@
-import os
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import LabelEncoder
-from keras.models import Sequential, load_model
-from keras.layers import Dense, LSTM
+import tensorflow as tf
+from keras import layers, models
+import os
+import datetime
 
-def accuracy_score(y_true, y_pred):
-    accuracy = np.sum(y_true == y_pred)/len(y_true)
-    return accuracy
+def read_data(file_path):
+    """读取CSV文件"""
+    data = pd.read_csv(file_path)
+    return data
 
-# 数据集导入与预处理
-data_folder = 'Software/data/train_data'
-file_list = os.listdir(data_folder)
-data_frames = []
+def preprocess_data(data):
+    """预处理数据"""
+    # 将波峰间隔时间列转换为列表
+    data['波峰间隔时间'] = data['波峰间隔时间'].apply(lambda x: [float(i) for i in x.strip('[]').split()])
 
-for file in file_list:
-    if file.endswith('.csv'):
-        file_path = os.path.join(data_folder, file)
-        data_frames.append(pd.read_csv(file_path))
+    # 将标签列转为数字编码
+    label_map = {'急刹': 0, '点刹': 1}
+    data['标签'] = data['标签'].map(label_map)
 
-train_df = pd.concat(data_frames)
-train_df_prep = train_df
-scaler = MinMaxScaler()
-train_df_prep[['Signal Strength', 'Press Speed', 'Press Duration']] = scaler.fit_transform(train_df_prep[['Signal Strength', 'Press Speed', 'Press Duration']])
+    # Pad the '波峰间隔时间' column separately
+    padded_intervals = tf.keras.preprocessing.sequence.pad_sequences(data['波峰间隔时间'].tolist(), maxlen=10, dtype='float32', padding='post', truncating='post')
 
-# 划分训练集
-X_train = train_df_prep.drop('label', axis=1).values
-X_train = X_train.reshape((X_train.shape[0], X_train.shape[1]))
+    # Combine the padded '波间隔时间' column with the other columns
+    data[['信号持续时间', '波峰数量', '峰峰值']] = data[['信号持续时间', '波峰数量', '峰峰值']].to_numpy(dtype='float32')
+    combined_data = np.hstack((data[['信号持续时间', '波峰数量', '峰峰值']].to_numpy(), padded_intervals))
 
-le = LabelEncoder()
-y_train = le.fit_transform(train_df_prep['label'])
+    return combined_data
 
-model_file = 'Software/model/my_model.h5'
+def split_data(data, train_ratio=0.8):
+    """划分训练集测试集"""
+    train_data = data[:int(len(data)*train_ratio)]
+    test_data = data[int(len(data)*train_ratio):]
+    return train_data, test_data
 
-if os.path.exists(model_file):
-    # 加载模型
-    model = load_model(model_file)
-else:
-    # 创建RNN模型
-    model = Sequential()
-    model.add(LSTM(32, input_shape=(3, 1)))
-    model.add(Dense(3, activation='softmax'))
-    model.compile(loss='sparse_categorical_crossentropy',
-                  optimizer='adam',
+def create_model():
+    """定义CNN模型"""
+    model = models.Sequential([
+        layers.Conv1D(32, 3, activation='relu', input_shape=(13, 1)),
+        layers.MaxPooling1D(2),
+        layers.Flatten(),
+        layers.Dense(64, activation='relu'),
+        layers.Dense(2, activation='softmax')
+    ])
+    return model
+
+def compile_model(model):
+    """编译模型"""
+    model.compile(optimizer='adam',
+                  loss='sparse_categorical_crossentropy',
                   metrics=['accuracy'])
-    model.fit(X_train, y_train,
-              epochs=200,
-              batch_size=32,
-              validation_split=0.2)
-    # 保存模型
-    model.save(model_file)
+    return model
 
-# 测试集导入与预处理
-test_df = pd.read_csv('Software/data/test_data/test_data.csv')
-test_df_prep = test_df
-test_df_prep[['Signal Strength', 'Press Speed', 'Press Duration']] = scaler.transform(test_df_prep[['Signal Strength', 'Press Speed', 'Press Duration']])
+def check_model_file(model, train_data, tensorboard_callback):
+    """检查模型文件是否存在，如果存在则加载模型，否则训练模型并保存"""
+    if os.path.exists('model/model.h5'):
+        model.load_weights('model/model.h5')
+    else:
+        x_train = train_data[:, :, np.newaxis]
+        y_train = train_data[:, -1].astype(int)
+        model.fit(x_train, y_train, epochs=10, callbacks=[tensorboard_callback])
+        model.save_weights('model/model.h5')
+    return model
 
-# 划分测试集
-X_test = test_df_prep.drop('label', axis=1).values
-X_test = X_test.reshape((X_test.shape[0], X_test.shape[1]))
-y_test = test_df_prep['label']
+def evaluate_model(model, test_data):
+    """测试模型"""
+    x_test = test_data[:, :, np.newaxis]
+    y_test = test_data[:, -1].astype(int)
+    test_loss, test_acc = model.evaluate(x_test, y_test)
+    return test_loss, test_acc
 
-# 测试集检测
-y_pred_prob = model.predict(X_test.reshape((X_test.shape[0], 3, 1)))
-y_pred_rnn = np.argmax(y_pred_prob, axis=1)
+def predict_labels(model, test_data, label_map):
+    """输出预测结果"""
+    x_test = test_data[:, :, np.newaxis]
+    predictions = model.predict(x_test)
+    predicted_labels = [list(label_map.keys())[list(label_map.values()).index(np.argmax(prediction))] for prediction in predictions]
+    print("模型的预测结果：", predictions)
+    print("标签映射：", label_map)
+    return predicted_labels
 
-# 输出结果
-print('Test Acc rnn:', accuracy_score(y_test, y_pred_rnn))
+def main():
+    file_path = 'data/1.csv'
+    data = read_data(file_path)
+    combined_data = preprocess_data(data)
+    train_data, test_data = split_data(combined_data)
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.metrics import confusion_matrix
+    # 使用TensorBoard可视化模型
+    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
-# 计算混淆矩阵
-cm = confusion_matrix(y_test, y_pred_rnn)
+    model = create_model()
+    model = compile_model(model)
+    model = check_model_file(model, train_data, tensorboard_callback)
 
-# 创建混淆矩阵的热图可视化
-plt.figure(figsize=(6,6))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-            xticklabels=le.classes_, yticklabels=le.classes_)
-plt.title('Confusion Matrix - RNN Model')
-plt.xlabel('Predicted Label')
-plt.ylabel('True Label')
-plt.show()
+    test_loss, test_acc = evaluate_model(model, test_data)
+    print("Test loss:", test_loss)
+    print("Test accuracy:", test_acc)
+
+    label_map = {'急刹': 0, '点刹': 1}
+    predicted_labels = predict_labels(model, test_data, label_map)
+    print(predicted_labels)
+
+    tf.keras.utils.plot_model(model, to_file='model/model.png', show_shapes=True)
+    return
+
+if __name__ == '__main__':
+    main()

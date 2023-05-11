@@ -80,7 +80,7 @@ def predict_labels(model, test_data, label_map):
     return predicted_labels
 
 def main():
-    file_path = 'data/1.csv'
+    file_path = 'data/fake.csv'
     data = read_data(file_path)
     combined_data = preprocess_data(data)
     train_data, test_data = split_data(combined_data)
